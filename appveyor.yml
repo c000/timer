@@ -1,0 +1,15 @@
+install:
+  - curl -Ssf -o rustup-init.exe https://win.rustup.rs/x86_64
+  - rustup-init.exe -y
+
+environment:
+  PATH: '%USERPROFILE%\.cargo\bin;%PATH%'
+
+build_script:
+  - cmd: cargo install --root out
+
+after_build:
+  - 7z a timer.zip out\bin\timer.exe
+
+artifacts:
+  - path: timer.zip
