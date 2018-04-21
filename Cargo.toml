@@ -1,0 +1,9 @@
+[package]
+name = "timer"
+version = "0.1.0"
+authors = ["c000"]
+
+[dependencies]
+chrono = "0.4.2"
+ctrlc = "3.1.0"
+term = "0.5.1"
