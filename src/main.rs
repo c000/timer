@@ -1,5 +1,5 @@
 extern crate chrono;
-extern crate term;
+extern crate console;
 extern crate ctrlc;
 
 use chrono::Duration;
@@ -8,6 +8,9 @@ use std::env::args;
 use std::io;
 use std::io::Write;
 use std::thread;
+use std::borrow::Cow;
+
+use console::Term;
 
 fn parse_hms<T>(args: &mut T)
   -> Result<Duration, std::num::ParseIntError>
@@ -25,24 +28,62 @@ fn parse_hms<T>(args: &mut T)
     Ok(acc)
 }
 
-fn write_passed_time<T>(buf: &mut T, passed: Duration, entire: Duration)
-  -> Result<(), std::io::Error>
-  where T: Write {
-    let rest = entire - passed;
-    let milli = rest.num_milliseconds() as f64;
-    let secs  = milli.abs() / 1000. % 60.;
-    let mins  = (milli.abs() / 60_000.).floor() % 60.;
-    let hours = (milli.abs() / 3600_000.).floor();
-    let rational = passed.num_milliseconds() as f64 / entire.num_milliseconds() as f64;
+struct PassedTime {
+    milli: f64,
+    secs: f64,
+    mins: f64,
+    hours: f64,
+    rational: f64,
+}
 
-    write!(buf,
-        "\r{:.0}% {:.4} | {}{:02.0}:{:02.0}:{:04.1} ",
-        (rational*100.).min(100.).floor(),
-        rational,
-        if milli < 0. {"-"} else {" "},
-        hours,
-        mins,
-        secs)
+impl PassedTime {
+    pub fn new(passed: Duration, entire: Duration) -> PassedTime {
+        let rest = entire - passed;
+        let milli = rest.num_milliseconds() as f64;
+        PassedTime {
+            milli: milli,
+            secs: milli.abs() / 1000. % 60.,
+            mins: (milli.abs() / 60_000.).floor() % 60.,
+            hours: (milli.abs() / 3600_000.).floor(),
+            rational: passed.num_milliseconds() as f64 / entire.num_milliseconds() as f64,
+        }
+    }
+
+    pub fn format_passed(&self) -> String {
+        format!("{:.0}% {:.4} | {}{:02.0}:{:02.0}:{:04.1}",
+            (self.rational*100.).min(100.).floor(),
+            self.rational,
+            if self.milli < 0. {"-"} else {" "},
+            self.hours,
+            self.mins,
+            self.secs)
+    }
+
+    pub fn format_progress(&self, length: usize) -> Cow<'static, str> {
+        if length < 2 {
+            return "".into();
+        }
+        let inner_size = length - 2;
+        let progress = (self.rational * inner_size as f64) as usize;
+        let progress_str = std::iter::repeat('=')
+            .take(progress)
+            .chain(std::iter::once('>'))
+            .chain(std::iter::repeat(' '));
+        format!("[{}]", progress_str.take(inner_size).collect::<String>()).into()
+    }
+
+    pub fn format_term(&self, t: &Term) -> std::result::Result<Vec<u8>, Box<std::error::Error>> {
+        let mut buf = std::vec::Vec::new();
+        let (_, width) = t.size();
+        let mut style = console::Style::new();
+        if 1. <= self.rational {
+            style = style.on_red();
+        }
+        let passed_str = self.format_passed();
+        let progress_str = self.format_progress(width as usize - passed_str.len() - 1);
+        write!(buf, "\r{} {}", passed_str, style.apply_to(progress_str))?;
+        Ok(buf)
+    }
 }
 
 fn print_usage_and_exit<S, T>(program: S, e: T) -> !
@@ -76,22 +117,19 @@ fn main() {
 
     let handle = thread::spawn(move || {
         let start = Utc::now();
-        let mut t = term::stdout().unwrap();
+        let mut t = Term::stdout();
 
         loop {
             let passed = Utc::now() - start;
-            let milli = (dur - passed).num_milliseconds() as f64;
-            if milli < 0. {
-                t.bg(term::color::RED).unwrap();
-            }
-            write_passed_time(&mut t, passed, dur).unwrap();
-            io::stdout().flush().unwrap();
+            let passed = PassedTime::new(passed, dur);
+            let buf = passed.format_term(&t).unwrap();
+            t.write(&buf).unwrap();
+            t.flush().unwrap();
             if rx.try_recv().is_ok() {
                 break;
             }
             thread::sleep(std::time::Duration::from_millis(100));
         }
-        t.reset().unwrap();
     });
 
     handle.join().unwrap();
