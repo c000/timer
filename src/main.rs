@@ -2,24 +2,27 @@ extern crate chrono;
 extern crate console;
 extern crate ctrlc;
 
-use chrono::Duration;
 use chrono::offset::Utc;
+use chrono::Duration;
+use std::borrow::Cow;
 use std::env::args;
 use std::io;
 use std::io::Write;
 use std::thread;
-use std::borrow::Cow;
 
 use console::Term;
 
-fn parse_hms<T>(args: &mut T)
-  -> Result<Duration, std::num::ParseIntError>
-  where T: Iterator<Item=String> {
-    let fs = [Duration::hours,
-              Duration::minutes,
-              Duration::seconds];
-    let ds = fs.into_iter()
-        .map(|f| args.next().unwrap_or(String::from("0")).parse().map(|x| f(x)));
+fn parse_hms<T>(args: &mut T) -> Result<Duration, std::num::ParseIntError>
+where
+    T: Iterator<Item = String>,
+{
+    let fs = [Duration::hours, Duration::minutes, Duration::seconds];
+    let ds = fs.into_iter().map(|f| {
+        args.next()
+            .unwrap_or(String::from("0"))
+            .parse()
+            .map(|x| f(x))
+    });
 
     let mut acc = Duration::zero();
     for d in ds {
@@ -50,13 +53,15 @@ impl PassedTime {
     }
 
     pub fn format_passed(&self) -> String {
-        format!("{:.0}% {:.4} | {}{:02.0}:{:02.0}:{:04.1}",
-            (self.rational*100.).min(100.).floor(),
+        format!(
+            "{:.0}% {:.4} | {}{:02.0}:{:02.0}:{:04.1}",
+            (self.rational * 100.).min(100.).floor(),
             self.rational,
-            if self.milli < 0. {"-"} else {" "},
+            if self.milli < 0. { "-" } else { " " },
             self.hours,
             self.mins,
-            self.secs)
+            self.secs
+        )
     }
 
     pub fn format_progress(&self, length: usize) -> Cow<'static, str> {
@@ -87,23 +92,24 @@ impl PassedTime {
 }
 
 fn print_usage_and_exit<S, T>(program: S, e: T) -> !
-  where S: std::borrow::Borrow<str>,
-        T: std::fmt::Display {
-    write!(io::stderr(),
+where
+    S: std::borrow::Borrow<str>,
+    T: std::fmt::Display,
+{
+    write!(
+        io::stderr(),
         "Usage:\n\t{} [HOUR [MINUTE [SECOND]]]\n{}",
         program.borrow(),
-        e)
-        .unwrap_or(());
+        e
+    )
+    .unwrap_or(());
     std::process::exit(1);
 }
 
 fn main() {
     let mut a = args();
     let program_name = a.next().unwrap();
-    let dur = parse_hms(&mut a)
-        .unwrap_or_else(|e|
-            print_usage_and_exit(program_name.as_ref(), e)
-        );
+    let dur = parse_hms(&mut a).unwrap_or_else(|e| print_usage_and_exit(program_name.as_ref(), e));
     // Check the rest arguments
     if let Some(_) = a.next() {
         print_usage_and_exit(program_name.as_ref(), "");
@@ -113,7 +119,8 @@ fn main() {
 
     ctrlc::set_handler(move || {
         tx.send(()).unwrap();
-    }).unwrap();
+    })
+    .unwrap();
 
     let handle = thread::spawn(move || {
         let start = Utc::now();
