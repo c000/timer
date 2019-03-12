@@ -1,11 +1,13 @@
 install:
   - curl -Ssf -o rustup-init.exe https://win.rustup.rs/x86_64
   - rustup-init.exe -y
+  - rustup component add rustfmt
 
 environment:
   PATH: '%USERPROFILE%\.cargo\bin;%PATH%'
 
 build_script:
+  - cmd: cargo fmt --all -- --check
   - cmd: cargo install --root out
 
 after_build:
